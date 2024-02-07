@@ -25,10 +25,12 @@ contract PresaleTokenVesting is Ownable {
     bytes32 public immutable i_merkleRoot;
     // Vesting parameters
     uint256 public constant VESTING_DURATION = 2 * 365 days; // 2 years in total
-    uint256 public constant FIRST_PHASE_DURATION = 6 * 30 days; // First 6 months & the next 6 months
-    uint256 public constant SECOND_PHASE_DURATION = 12 * 30 days; //
-    uint256 public constant THIRD_PHASE_DURATION = 15 * 30 days; //
-    uint256 public constant FOURTH_PHASE_DURATION = 18 * 30 days; //
+    uint256 public constant FIRST_UNLOCK = 6 * 30 days; // After 6 months
+    uint256 public constant SECOND_UNLOCK = 12 * 30 days; // After 12 months
+    // Subsequent unlocks are every 3 months after the first year
+    uint256 public constant THIRD_UNLOCK = 15 * 30 days; // After 15 months
+    uint256 public constant FOURTH_UNLOCK = 18 * 30 days; // After 18 months
+    uint256 public constant FIFTH_UNLOCK = 21 * 30 days; // After 21 months
 
     uint256 public constant UNLOCK_AMOUNT = 25;
 
@@ -67,12 +69,12 @@ contract PresaleTokenVesting is Ownable {
             beneficiary: _beneficiary,
             totalAmount: totalAmount,
             amountReleased: 0,
-            vestingStart: block.timestamp
+            vestingStart: getCurrentTime()
         });
         uint256 vestCount = holdersVestingCount[_beneficiary];
         holdersVestingCount[_beneficiary] = vestCount + 1;
 
-        emit VestCreated(_beneficiary, totalAmount, block.timestamp);
+        emit VestCreated(_beneficiary, totalAmount, getCurrentTime());
     }
 
     function computetVestingScheduleIdForHolder(
@@ -127,23 +129,21 @@ contract PresaleTokenVesting is Ownable {
         bytes32 vestingScheduleId
     ) public view returns (uint256) {
         VestingInfo memory vesting = vestingInformation[vestingScheduleId];
-        uint256 elapsedTime = block.timestamp - vesting.vestingStart;
+        uint256 elapsedTime = getCurrentTime() - vesting.vestingStart;
         uint256 totalAmount = vesting.totalAmount;
 
-        if (elapsedTime < FIRST_PHASE_DURATION) {
-            return 0;
-        } else if (
-            (elapsedTime >= FIRST_PHASE_DURATION &&
-                elapsedTime < SECOND_PHASE_DURATION) ||
-            (elapsedTime >= SECOND_PHASE_DURATION &&
-                elapsedTime < THIRD_PHASE_DURATION) ||
-            (elapsedTime >= THIRD_PHASE_DURATION &&
-                elapsedTime < FOURTH_PHASE_DURATION) ||
-            (elapsedTime >= FOURTH_PHASE_DURATION)
-        ) {
-            return (totalAmount * (UNLOCK_AMOUNT)) / 100;
+        if (elapsedTime < FIRST_UNLOCK) {
+            return 0; // No tokens are unlocked in the first 6 months
+        } else if (elapsedTime >= FIRST_UNLOCK && elapsedTime < SECOND_UNLOCK) {
+            return (totalAmount * 25) / 100; // 25% unlocked after 6 months
+        } else if (elapsedTime >= SECOND_UNLOCK && elapsedTime < THIRD_UNLOCK) {
+            return (totalAmount * 50) / 100; // An additional 25% unlocked after 12 months, making 50% in total
+        } else if (elapsedTime >= THIRD_UNLOCK && elapsedTime < FOURTH_UNLOCK) {
+            return (totalAmount * 75) / 100; // Another 25% unlocked after 15 months, making 75% in total
+        } else if (elapsedTime >= FOURTH_UNLOCK) {
+            return (totalAmount * 100) / 100; // Final 25% unlocked after 18 months, making 100% in total
         } else {
-            return totalAmount;
+            return totalAmount; // All tokens are fully vested after 21 months under this scheme
         }
     }
 
@@ -151,33 +151,3 @@ contract PresaleTokenVesting is Ownable {
         return block.timestamp;
     }
 }
-
-/**
- * if (elapsedTime < FIRST_PHASE_DURATION) {
-            return 0;
-        } else if (
-            elapsedTime >= FIRST_PHASE_DURATION &&
-            elapsedTime < SECOND_PHASE_DURATION
-        ) {
-            return (totalAmount * (UNLOCK_AMOUNT + UNLOCK_AMOUNT)) / 100;
-        } else if (
-            elapsedTime >= SECOND_PHASE_DURATION &&
-            elapsedTime < THIRD_PHASE_DURATION
-        ) {
-            return (totalAmount * (UNLOCK_AMOUNT + UNLOCK_AMOUNT)) / 100;
-        } else if (
-            elapsedTime >= THIRD_PHASE_DURATION &&
-            elapsedTime < FOURTH_PHASE_DURATION
-        ) {
-            return (totalAmount * (UNLOCK_AMOUNT + UNLOCK_AMOUNT)) / 100;
-        } else if (elapsedTime < VESTING_DURATION) {
-            // Calculate releases for phases 3 and 4 based on the quarter
-            uint256 quartersElapsed = (elapsedTime -
-                FIRST_PHASE_DURATION -
-                SECOND_PHASE_DURATION) / (3 * 30 days);
-            uint256 totalReleasePercentage = UNLOCK_AMOUNT +
-                UNLOCK_AMOUNT +
-                (quartersElapsed * UNLOCK_AMOUNT);
-            return (totalAmount * totalReleasePercentage) / 100;
-        }
- */
