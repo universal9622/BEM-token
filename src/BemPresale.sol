@@ -26,6 +26,7 @@ pragma solidity ^0.8.19;
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "foundry-chainlink-toolkit/src/interfaces/feeds/AggregatorV3Interface.sol";
+import "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
 import "./lib/ABDKMath64x64.sol";
 
 //Error
@@ -38,6 +39,11 @@ error BEM__PresaleCapCantBeZero();
 error BEM__MaxPurchaseCantBeZero();
 error BEM__PurchaseCapCantBeZero();
 error BEM__TokenNonExistent();
+//Airdrop errors
+error BM__InvalidAddress();
+error BM__InvalidAmount();
+error BM_InvalidMerkleProof();
+error BM__AirDropFailed();
 
 /// @title BemPresale
 /// @notice This contract manages the presale of BEM tokens, allowing users to contribute ETH in exchange for BEM tokens.
@@ -47,6 +53,8 @@ error BEM__TokenNonExistent();
 contract BemPresale is Ownable {
     IERC20 private immutable _token;
     AggregatorV3Interface private priceFeed;
+
+    bytes32 public immutable i_merkleRoot;
 
     uint256 public constant tokenPriceUsd = 0.0075 * 1e18; //$0.0075
 
@@ -78,6 +86,8 @@ contract BemPresale is Ownable {
     /// @param _amount The amount of tokens withdrawn.
     event TokensWithdrawn(address _receiver, uint256 _amount);
 
+    event AirDrop(address source, address destination, uint256 _amount);
+
     /// @dev Sets the initial conditions for the presale.
     /// @param presaleCap The maximum amount of ETH that can be raised.
     /// @param presaleMinPurchase The minimum contribution amount in ETH.
@@ -87,7 +97,8 @@ contract BemPresale is Ownable {
         uint256 presaleCap,
         uint256 presaleMinPurchase,
         uint256 presaleMaxPurchase,
-        IERC20 tokenAddress
+        IERC20 tokenAddress,
+        bytes32 merkleRoot
     ) Ownable(msg.sender) {
         if (presaleCap <= 0) revert BEM__PresaleCapCantBeZero();
         if (presaleMaxPurchase <= 0 || presaleMaxPurchase <= 0)
@@ -97,22 +108,14 @@ contract BemPresale is Ownable {
         priceFeed = AggregatorV3Interface(
             0x694AA1769357215DE4FAC081bf1f309aDC325306
         );
+        isPresaleActive = true;
+        i_merkleRoot = merkleRoot;
         i_presaleCap = presaleCap;
         i_presaleMinPurchase = presaleMinPurchase;
         i_presaleMaxPurchase = presaleMaxPurchase;
         _token = tokenAddress;
     }
 
-    // int128 totalDepositUSDValue = ABDKMath64x64.divu(
-    //     ABDKMath64x64.divu(
-    //         ABDKMath64x64.mulu(
-    //             currentEthUSDPrice,
-    //             ethDeposited
-    //         ),
-    //         1e18
-    //     ),
-    //     1e8
-    // );
     /// @notice Allows contributors to send ETH and participate in the presale.
     /// @dev Reverts if the presale is inactive, the contribution is outside the allowed range, the presale cap is exceeded, or if the contributor has reached the max accumulation limit.
     function contributeToPresale() public payable {
@@ -181,5 +184,24 @@ contract BemPresale is Ownable {
     function getLatestEthUSDPrice() public view returns (int) {
         (, int256 price, , , ) = priceFeed.latestRoundData();
         return price;
+    }
+
+    //AirDrop
+    function claimAirdrop(
+        bytes32[] calldata merkleProof,
+        address user,
+        uint256 _tokenAmount
+    ) public onlyOwner {
+        if (address(user) == address(0)) revert BM__InvalidAddress();
+        if (_tokenAmount <= 0) revert BM__InvalidAmount();
+
+        bytes32 leaf = keccak256(abi.encodePacked(user, _tokenAmount));
+        if (!MerkleProof.verify(merkleProof, i_merkleRoot, leaf))
+            revert BM_InvalidMerkleProof();
+
+        if (!_token.transferFrom(address(this), user, _tokenAmount))
+            revert BM__AirDropFailed();
+
+        emit AirDrop(address(this), user, _tokenAmount);
     }
 }
