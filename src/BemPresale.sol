@@ -25,6 +25,8 @@ pragma solidity ^0.8.19;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "foundry-chainlink-toolkit/src/interfaces/feeds/AggregatorV3Interface.sol";
+import "./lib/ABDKMath64x64.sol";
 
 //Error
 error BEM__PresaleInactive();
@@ -44,6 +46,9 @@ error BEM__TokenNonExistent();
 
 contract BemPresale is Ownable {
     IERC20 private immutable _token;
+    AggregatorV3Interface private priceFeed;
+
+    uint256 public constant tokenPriceUsd = 0.0075 * 1e18; //$0.0075
 
     uint256 public immutable i_presaleCap;
     uint256 public immutable i_presaleMinPurchase;
@@ -89,12 +94,25 @@ contract BemPresale is Ownable {
             revert BEM__PurchaseCapCantBeZero();
         if (address(tokenAddress) == address(0)) revert BEM__TokenNonExistent();
 
+        priceFeed = AggregatorV3Interface(
+            0x694AA1769357215DE4FAC081bf1f309aDC325306
+        );
         i_presaleCap = presaleCap;
         i_presaleMinPurchase = presaleMinPurchase;
         i_presaleMaxPurchase = presaleMaxPurchase;
         _token = tokenAddress;
     }
 
+    // int128 totalDepositUSDValue = ABDKMath64x64.divu(
+    //     ABDKMath64x64.divu(
+    //         ABDKMath64x64.mulu(
+    //             currentEthUSDPrice,
+    //             ethDeposited
+    //         ),
+    //         1e18
+    //     ),
+    //     1e8
+    // );
     /// @notice Allows contributors to send ETH and participate in the presale.
     /// @dev Reverts if the presale is inactive, the contribution is outside the allowed range, the presale cap is exceeded, or if the contributor has reached the max accumulation limit.
     function contributeToPresale() public payable {
@@ -106,9 +124,18 @@ contract BemPresale is Ownable {
         ) revert BEM__InvalidPurchaseAmount();
         if (i_presaleCap == presaleRaisedAmount)
             revert BEM__PresaleCapExceeded();
-        saleDeposit[msg.sender] = msg.value;
-        presaleRaisedAmount += msg.value;
-        uint256 tokenAllocated = msg.value / (0.000001 ether);
+
+        uint256 ethDeposited = msg.value; //Deposit value in WEI
+        int256 currentEthUSDPrice = getLatestEthUSDPrice(); //Latest price of ETH in USD with a scale of 1e8
+        uint256 usdValueForEthDeposit = ABDKMath64x64.mulu( //Using ABDKMath64x64 for high precision on calculation
+            ABDKMath64x64.divu(ethDeposited, 1e10),
+            uint256(currentEthUSDPrice)
+        );
+        saleDeposit[msg.sender] = ethDeposited;
+        presaleRaisedAmount += ethDeposited;
+        uint128 tokenAllocated = uint128(
+            ABDKMath64x64.divu((usdValueForEthDeposit * 1e18), tokenPriceUsd)
+        );
         addressToPresaleAmount[msg.sender] += tokenAllocated;
 
         emit PresaleContribution(msg.sender, msg.value, tokenAllocated);
@@ -146,5 +173,13 @@ contract BemPresale is Ownable {
         if (address(this).balance <= 0) revert BEM__ZeroEtherToWithdraw();
         uint256 balance = address(this).balance;
         payable(owner()).transfer(balance);
+    }
+
+    /**
+     * Gets the latest ETH/USD value using Chainlink's pricefeeds...
+     */
+    function getLatestEthUSDPrice() public view returns (int) {
+        (, int256 price, , , ) = priceFeed.latestRoundData();
+        return price;
     }
 }

@@ -12,6 +12,7 @@ error BMS__InvalidDuration();
 error BMS__StakeFailed();
 error BMS__WithdrawFailed();
 error BMS__NotRewardsAvailable();
+error BMS__InvalidStaker();
 
 contract BemStaking {
     IERC20 public immutable tokenAddress;
@@ -27,7 +28,7 @@ contract BemStaking {
 
     //Mapping
     mapping(address => bool) public isStaker;
-    mapping(address => uint256) public balances;
+    mapping(address => uint256) public balanceOf;
     mapping(address => uint256) public stakeRewards;
     mapping(address => uint256) public userRewardPerTokenPaid;
 
@@ -41,6 +42,12 @@ contract BemStaking {
     event TokenStakeWithdrawn(address staker, uint256 stakeAmount);
     event StakeYieldRedeemed(address staker, uint256 yield);
 
+    //Modifier
+    modifier hasStake() {
+        if (!isStaker[msg.sender]) revert BMS__InvalidStaker();
+        _;
+    }
+
     constructor(IERC20 _token) {
         tokenAddress = _token;
     }
@@ -50,7 +57,7 @@ contract BemStaking {
         if (duration < MIN_DURATION || duration > MAX_DURATION)
             revert BMS__InvalidDuration();
 
-        uint256 userStakeBalance = balances[msg.sender];
+        uint256 userStakeBalance = balanceOf[msg.sender];
         uint64 recentStakeDurationUpdate = getLatestStakeTimeFromStart();
         uint256 _totalSupply = totalSupply;
         uint256 rewardPerToken = _getRewardPerToken(
@@ -67,7 +74,7 @@ contract BemStaking {
         );
         userRewardPerTokenPaid[msg.sender] = rewardPerToken;
 
-        balances[msg.sender] = userStakeBalance + amount;
+        balanceOf[msg.sender] = userStakeBalance + amount;
         totalSupply = _totalSupply + totalSupply;
         if (!tokenAddress.transferFrom(msg.sender, address(this), amount))
             revert BMS__StakeFailed();
@@ -77,10 +84,10 @@ contract BemStaking {
         emit TokenStaked(msg.sender, amount, duration, rewardRate);
     }
 
-    function withdraw(uint256 amount) external {
+    function withdraw(uint256 amount) external hasStake {
         if (amount == 0) revert BMS__InsufficientStake();
 
-        uint256 userStakeBalance = balances[msg.sender];
+        uint256 userStakeBalance = balanceOf[msg.sender];
         uint64 recentStakeDurationUpdate = getLatestStakeTimeFromStart();
         uint256 _totalSupply = totalSupply;
 
@@ -101,7 +108,7 @@ contract BemStaking {
 
         userRewardPerTokenPaid[msg.sender] = rewardPerToken;
 
-        balances[msg.sender] = userStakeBalance - amount;
+        balanceOf[msg.sender] = userStakeBalance - amount;
 
         unchecked {
             totalSupply = _totalSupply - amount;
@@ -113,8 +120,8 @@ contract BemStaking {
         emit TokenStakeWithdrawn(msg.sender, amount);
     }
 
-    function exit() public {
-        uint256 stakeBalance = balances[msg.sender];
+    function exit() public hasStake {
+        uint256 stakeBalance = balanceOf[msg.sender];
 
         uint64 recentStakeDurationUpdate = getLatestStakeTimeFromStart();
         uint256 _totalSupply = totalSupply;
@@ -137,7 +144,7 @@ contract BemStaking {
         lastUpdateTime = recentStakeDurationUpdate;
         userRewardPerTokenPaid[msg.sender] = rewardPerToken;
 
-        balances[msg.sender] = 0;
+        balanceOf[msg.sender] = 0;
 
         tokenAddress.transferFrom(address(this), msg.sender, stakeBalance);
         emit TokenStakeWithdrawn(msg.sender, stakeBalance);
@@ -151,8 +158,8 @@ contract BemStaking {
         }
     }
 
-    function getReward() external {
-        uint256 stakeBalance = balances[msg.sender];
+    function getReward() external hasStake {
+        uint256 stakeBalance = balanceOf[msg.sender];
         uint256 _totalSupply = totalSupply;
         uint64 latestStakeDurationUpdate = getLatestStakeTimeFromStart();
         uint256 rewardPerToken = _getRewardPerToken(
@@ -174,6 +181,20 @@ contract BemStaking {
         }
 
         tokenAddress.transferFrom(address(this), msg.sender, rewards);
+    }
+
+    function getRewardPerToken() public view returns (uint256) {
+        return _getRewardPerToken(getLatestStakeTimeFromStart(), totalSupply);
+    }
+
+    function earned(address staker) public view returns (uint256) {
+        return
+            _earned(
+                staker,
+                balanceOf[staker],
+                _getRewardPerToken(getLatestStakeTimeFromStart(), totalSupply),
+                stakeRewards[staker]
+            );
     }
 
     function _getRewardPerToken(
