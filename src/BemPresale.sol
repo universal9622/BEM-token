@@ -130,15 +130,20 @@ contract BemPresale is Ownable {
 
         uint256 ethDeposited = msg.value; //Deposit value in WEI
         int256 currentEthUSDPrice = getLatestEthUSDPrice(); //Latest price of ETH in USD with a scale of 1e8
-        uint256 usdValueForEthDeposit = ABDKMath64x64.mulu( //Using ABDKMath64x64 for high precision on calculation
-            ABDKMath64x64.divu(ethDeposited, 1e10),
-            uint256(currentEthUSDPrice)
-        );
+
+        // uint256 usdValueForEthDeposit = ABDKMath64x64.mulu( //Using ABDKMath64x64 for high precision on calculation
+        //     ABDKMath64x64.divu(ethDeposited, 1e10),
+        //     uint256(currentEthUSDPrice)
+        // );
+        // uint128 tokenAllocated = uint128(
+        //     ABDKMath64x64.divu((usdValueForEthDeposit * 1e18), tokenPriceUsd)
+        // );
+        uint256 usdValueForEthDeposit = (ethDeposited * // Convert wei to USD scale
+            uint256(currentEthUSDPrice)) / 1e18;
+
         saleDeposit[msg.sender] = ethDeposited;
+        uint256 tokenAllocated = (usdValueForEthDeposit * 1e18) / tokenPriceUsd;
         presaleRaisedAmount += ethDeposited;
-        uint128 tokenAllocated = uint128(
-            ABDKMath64x64.divu((usdValueForEthDeposit * 1e18), tokenPriceUsd)
-        );
         addressToPresaleAmount[msg.sender] += tokenAllocated;
 
         emit PresaleContribution(msg.sender, msg.value, tokenAllocated);

@@ -99,7 +99,7 @@ contract PresaleTokenVesting is Ownable {
         if (!MerkleProof.verify(merkleProof, i_merkleRoot, leaf))
             revert BTV__InvalidMerkleProof();
 
-        vestingScheduleId = computetVestingScheduleIdForHolder(_beneficiary);
+        vestingScheduleId = computeVestingScheduleIdForHolder(_beneficiary);
         vestingInformation[vestingScheduleId] = VestingInfo({
             beneficiary: _beneficiary,
             totalAmount: totalAmount,
@@ -113,7 +113,7 @@ contract PresaleTokenVesting is Ownable {
     }
 
     /// @dev Computes a unique identifier for a vesting schedule based on the beneficiary's address and their vest count
-    function computetVestingScheduleIdForHolder(
+    function computeVestingScheduleIdForHolder(
         address _beneficiary
     ) public view returns (bytes32) {
         return
@@ -127,7 +127,7 @@ contract PresaleTokenVesting is Ownable {
     function computeVestingScheduleIdForAddressNIndex(
         address holder,
         uint256 index
-    ) public pure returns (bytes32) {
+    ) internal pure returns (bytes32) {
         return keccak256(abi.encodePacked(holder, index));
     }
 
@@ -166,7 +166,7 @@ contract PresaleTokenVesting is Ownable {
         return totalVested - vesting.amountReleased;
     }
 
-    /// @dev Determines the amount of tokens that have vested based on the current time and the vesting schedule
+    /// @dev Determines the amount of vested token to unlock to the pre-sale contributor based on the current time and the vesting schedule
     function vestedAmount(
         bytes32 vestingScheduleId
     ) internal view returns (uint256) {
