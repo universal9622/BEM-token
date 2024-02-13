@@ -14,11 +14,11 @@ contract BemPresaleTest is Test {
     BemToken bemToken;
     IERC20 token; // Mock token interface
     address deployer;
-    address user1 = address(1);
-    address user2 = address(2);
-    address user3 = address(3);
+    address user1 = makeAddr("user1");
+    address user2 = makeAddr("user2");
+    address user3 = makeAddr("user3");
     bytes32 merkleRoot =
-        0x83fe711ff8c6e235c1a8cb6e024ce194b356c046a60627149e8b794258d18de5; // Example merkle root, adjust as needed
+        0x3a66ce04bfa0fac12c5b24f150c3b7b16f81a7ddae4778862490612445a7c5ae; // Example merkle root, adjust as needed
 
     uint256 public constant tokenPriceUsd = 0.0075 * 1e18; //$0.0075
 
@@ -38,7 +38,8 @@ contract BemPresaleTest is Test {
         // token = new MockToken();
         // console.log("TestContractAddress:", address(this));
         bemToken = new BemToken();
-        bemToken.initialMint(1000000000);
+        bemToken.initialMint(1000000000000000000000000000);
+        token = IERC20(bemToken);
         bemPresale = new BemPresale(
             10 ether, // presaleCap
             0.0009 ether, // presaleMinPurchase
@@ -46,10 +47,15 @@ contract BemPresaleTest is Test {
             IERC20(0x5615dEB798BB3E4dFa0139dFa1b3D433Cc23b72f), // tokenAddress
             merkleRoot
         );
+        console.log("user1:", user1);
+        console.log("user2:", user2);
         vm.startPrank(address(bemToken));
-        bemToken.approve(address(this), 1000000);
+        bemToken.approve(address(this), 1000000000000000000000000);
         vm.stopPrank();
-        bemToken.externalTransfer(address(bemPresale), 1000000);
+        bemToken.externalTransfer(
+            address(bemPresale),
+            1000000000000000000000000
+        );
         bemPresale.restartPresale();
         // Additional setup like funding the contract with tokens for airdrop, etc.
     }
@@ -123,15 +129,16 @@ contract BemPresaleTest is Test {
         bytes32[] memory merkleProof = new bytes32[](1);
         merkleProof[
             0
-        ] = 0xcb3a2b5807d4e9ac71d08c7220682b5945f7e1a5b4424af3c14695bf205131dc;
-        uint256 tokenAmount = 10000;
-        address airdropClaimee = 0x66aAf3098E1eB1F24348e84F509d8bcfD92D0620;
+        ] = 0x1259f3ff2f491efceef2086c124e6552f460a90747628bcd93a89753caaa9bc1; //Use Openzeppelin's MerkleTree js library for generation of proofs and root
+        uint256 tokenAmount = 1000000000000000000000;
+        address airdropClaimee = 0x29E3b139f4393aDda86303fcdAa35F60Bb7092bF;
         console.log(merrkleProof());
 
         vm.expectEmit(true, true, true, true);
-        // emit AirDrop(address(bemPresale), user1, tokenAmount);
+        emit AirDrop(address(bemPresale), user1, tokenAmount);
 
         vm.prank(deployer);
+        // bemToken.approve();
         bemPresale.claimAirdrop(merkleProof, airdropClaimee, tokenAmount);
 
         assertEq(token.balanceOf(airdropClaimee), tokenAmount);
@@ -142,10 +149,12 @@ contract BemPresaleTest is Test {
 
         merkleProof[
             0
-        ] = 0x657f7ca5eb6a79fe1cd4fcfabe9433b7a52d5aa7b5f1013bafd08c0ed6489c87;
-        uint256 tokenAmount = 10000;
-        address airdropClaimee = 0x66aAf3098E1eB1F24348e84F509d8bcfD92D0620;
-        bytes32 leaf = keccak256(abi.encode(airdropClaimee, tokenAmount));
+        ] = 0x1259f3ff2f491efceef2086c124e6552f460a90747628bcd93a89753caaa9bc1;
+        uint256 tokenAmount = 1000000000000000000000;
+        address airdropClaimee = 0x29E3b139f4393aDda86303fcdAa35F60Bb7092bF;
+        bytes32 leaf = keccak256(
+            bytes.concat(keccak256(abi.encode(airdropClaimee, tokenAmount)))
+        );
         bool proof = MerkleProof.verify(merkleProof, merkleRoot, leaf);
         return proof;
     }

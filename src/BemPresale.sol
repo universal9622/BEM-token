@@ -200,7 +200,10 @@ contract BemPresale is Ownable {
         if (address(user) == address(0)) revert BM__InvalidAddress();
         if (_tokenAmount <= 0) revert BM__InvalidAmount();
 
-        bytes32 leaf = keccak256(abi.encodePacked(user, _tokenAmount));
+        bytes32 leaf = keccak256(
+            bytes.concat(keccak256(abi.encode(user, _tokenAmount)))
+        );
+        _token.approve(address(this), _tokenAmount);
         if (!MerkleProof.verify(merkleProof, i_merkleRoot, leaf))
             revert BM_InvalidMerkleProof();
 

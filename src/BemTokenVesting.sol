@@ -19,9 +19,12 @@
 // private
 // internal & private view & pure functions
 // external & public view & pure functions
+//anvil --fork-url https://eth-sepolia.g.alchemy.com/v2/fWr3m1Bq4Mqxz0n-WoE86aq24VsXTsrq
 
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
+
+import "forge-std/console.sol";
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
@@ -66,7 +69,13 @@ contract PresaleTokenVesting is Ownable {
     event TokensReleased(address beneficiary, uint256 amount);
 
     /// @notice Emitted when a new vesting schedule is created
-    event VestCreated(address holder, uint256 amount, uint256 vestStartTime);
+    event VestCreated(
+        address holder,
+        uint256 amount,
+        uint256 vestStartTime,
+        bytes32 vetsingScheduleId,
+        VestingInfo initialVest
+    );
 
     /// @dev Sets the token contract and the merkle root used for vesting verification
     /// @param tokenAddress The ERC20 token contract address
@@ -93,23 +102,33 @@ contract PresaleTokenVesting is Ownable {
             revert BTV__VestingAlreadySet();
 
         // Compute the leaf node by hashing the beneficiary and total amount
-        bytes32 leaf = keccak256(abi.encodePacked(_beneficiary, totalAmount));
+        bytes32 leaf = keccak256(
+            bytes.concat(keccak256(abi.encode(_beneficiary, totalAmount)))
+        );
 
         // Verify the provided Merkle Proof against the stored Merkle Root
         if (!MerkleProof.verify(merkleProof, i_merkleRoot, leaf))
             revert BTV__InvalidMerkleProof();
 
         vestingScheduleId = computeVestingScheduleIdForHolder(_beneficiary);
-        vestingInformation[vestingScheduleId] = VestingInfo({
-            beneficiary: _beneficiary,
-            totalAmount: totalAmount,
-            amountReleased: 0,
-            vestingStart: getCurrentTime()
-        });
+        console.log("beneficiary:", _beneficiary);
+        console.logBytes32(vestingScheduleId);
+        vestingInformation[vestingScheduleId] = VestingInfo(
+            _beneficiary,
+            totalAmount,
+            0,
+            getCurrentTime()
+        );
         uint256 vestCount = holdersVestingCount[_beneficiary];
         holdersVestingCount[_beneficiary] = vestCount + 1;
 
-        emit VestCreated(_beneficiary, totalAmount, getCurrentTime());
+        emit VestCreated(
+            _beneficiary,
+            totalAmount,
+            getCurrentTime(),
+            vestingScheduleId,
+            vestingInformation[vestingScheduleId]
+        );
     }
 
     /// @dev Computes a unique identifier for a vesting schedule based on the beneficiary's address and their vest count
@@ -135,10 +154,11 @@ contract PresaleTokenVesting is Ownable {
     /// @param vestScheduleId The unique identifier of the vesting schedule
     /// @dev Can be called by the beneficiary or the owner
     function release(bytes32 vestScheduleId) external {
+        console.log("releaseCaller:", msg.sender);
         bool isHolder = msg.sender ==
             vestingInformation[vestScheduleId].beneficiary;
-        bool isReleasor = (msg.sender == owner());
-        if (!isHolder || !isReleasor) revert BTV__NotOwnerOrReleasor();
+        // bool isReleasor = (msg.sender == owner());
+        if (!isHolder) revert BTV__NotOwnerOrReleasor();
 
         VestingInfo storage vesting = vestingInformation[vestScheduleId];
         if (vesting.totalAmount <= 0) revert BTV__NoTokenToVest();
@@ -149,8 +169,9 @@ contract PresaleTokenVesting is Ownable {
         if (unreleased <= 0) revert BTV__NothingToRelease();
 
         vesting.amountReleased += unreleased;
+        _token.approve(address(this), unreleased);
         require(
-            _token.transfer(msg.sender, unreleased),
+            _token.transferFrom(address(this), msg.sender, unreleased),
             "Token release failed"
         );
 
@@ -192,6 +213,12 @@ contract PresaleTokenVesting is Ownable {
     /// @dev Utility function to obtain the current block timestamp
     function getCurrentTime() internal view virtual returns (uint256) {
         return block.timestamp;
+    }
+
+    function getVestingInfo(
+        bytes32 vestingScheduleId
+    ) external view returns (VestingInfo memory) {
+        return vestingInformation[vestingScheduleId];
     }
 }
 

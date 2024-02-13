@@ -1,235 +1,172 @@
 //SPDX-License-Identifier:MIT
 
 pragma solidity ^0.8.19;
-
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
-import "./lib/FullMath.sol";
+import "@openzeppelin/contracts/access/AccessControl.sol";
+import "./lib/ABDKMath64x64.sol";
 
 //Error
 error BMS__InsufficientStake();
 error BMS__InvalidDuration();
+error BMS_InsufficientBalance();
 error BMS__StakeFailed();
 error BMS__WithdrawFailed();
 error BMS__NotRewardsAvailable();
 error BMS__InvalidStaker();
+error BMS__StakingPeriodNotOver();
+error BMS__NoStakeAvailable();
+error BMS__StakingInactive();
+error BMS__AlreadyPaused();
+error BMS__StakingAlreadyActive();
+error BMS__StakingPeriodOverTryWithdrawal();
+error BMS__StakeExitFailed();
 
-contract BemStaking {
+contract BemStaking is AccessControl {
     IERC20 public immutable tokenAddress;
-
-    uint64 public constant MIN_DURATION = 3 * 30 days;
-    uint64 public constant MAX_DURATION = 2 * 365 days;
-    uint256 public constant PRECISION = 1e30;
-
     uint256 public totalSupply;
-    uint256 public rewardRate;
-    uint256 public rewardPerTokenStored;
-    uint64 public lastUpdateTime;
+    uint256 public immutable rewardRate;
+    bool public isActive = true;
+
+    uint64 public MIN_DURATION = 3 * 30 days;
+    uint64 public MAX_DURATION = 2 * 365 days;
+    bytes32 public constant STAKER_ADMIN = keccak256("STAKER_ADMIN");
+    struct StakeInfo {
+        uint256 stakeAmount;
+        uint64 duration;
+        uint64 stakeBegan;
+    }
 
     //Mapping
+    mapping(address => mapping(uint32 => StakeInfo)) public stakerInfo;
     mapping(address => bool) public isStaker;
-    mapping(address => uint256) public balanceOf;
-    mapping(address => uint256) public stakeRewards;
-    mapping(address => uint256) public userRewardPerTokenPaid;
 
     //Event
     event TokenStaked(
         address staker,
         uint256 amount,
         uint64 duration,
-        uint256 rewardRate
+        uint32 _counter
     );
-    event TokenStakeWithdrawn(address staker, uint256 stakeAmount);
-    event StakeYieldRedeemed(address staker, uint256 yield);
+    event StakeYieldRedeemed(address staker, uint256 rewards, uint32 index);
+    event StakerExited(address staker, uint _amount, StakeInfo stakeInfo);
 
     //Modifier
     modifier hasStake() {
         if (!isStaker[msg.sender]) revert BMS__InvalidStaker();
         _;
     }
-
-    constructor(IERC20 _token) {
-        tokenAddress = _token;
+    modifier stakingIsActive() {
+        if (!isActive) revert BMS__StakingInactive();
+        _;
     }
 
-    function stake(uint256 amount, uint64 duration) external {
-        if (amount == 0) revert BMS__InsufficientStake();
-        if (duration < MIN_DURATION || duration > MAX_DURATION)
+    constructor(IERC20 _token, address stakerAdmin) {
+        tokenAddress = _token;
+        _grantRole(STAKER_ADMIN, stakerAdmin);
+        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
+    }
+
+    function stake(uint256 _amount, uint64 _duration) public stakingIsActive {
+        if (_amount == 0) revert BMS__InsufficientStake();
+        if (_duration < MIN_DURATION || _duration > MAX_DURATION)
             revert BMS__InvalidDuration();
+        if (tokenAddress.balanceOf(msg.sender) < _amount)
+            revert BMS_InsufficientBalance();
 
-        uint256 userStakeBalance = balanceOf[msg.sender];
-        uint64 recentStakeDurationUpdate = getLatestStakeTimeFromStart();
-        uint256 _totalSupply = totalSupply;
-        uint256 rewardPerToken = _getRewardPerToken(
-            recentStakeDurationUpdate,
-            _totalSupply
+        uint32 stakeCount;
+        StakeInfo memory stakeInfo = StakeInfo(
+            _amount,
+            _duration,
+            uint64(block.timestamp)
         );
-        rewardPerTokenStored = rewardPerToken;
-        lastUpdateTime = recentStakeDurationUpdate;
-        stakeRewards[msg.sender] = _earned(
-            msg.sender,
-            userStakeBalance,
-            rewardPerToken,
-            stakeRewards[msg.sender]
-        );
-        userRewardPerTokenPaid[msg.sender] = rewardPerToken;
-
-        balanceOf[msg.sender] = userStakeBalance + amount;
-        totalSupply = _totalSupply + totalSupply;
-        if (!tokenAddress.transferFrom(msg.sender, address(this), amount))
+        stakerInfo[msg.sender][stakeCount] = stakeInfo;
+        stakeCount++;
+        tokenAddress.approve(address(this), _amount);
+        if (!tokenAddress.transferFrom(msg.sender, address(this), _amount))
             revert BMS__StakeFailed();
-
+        totalSupply += _amount;
         isStaker[msg.sender] = true;
 
-        emit TokenStaked(msg.sender, amount, duration, rewardRate);
+        emit TokenStaked(msg.sender, _amount, _duration, stakeCount);
     }
 
-    function withdraw(uint256 amount) external hasStake {
-        if (amount == 0) revert BMS__InsufficientStake();
+    function exit(uint32 index) external hasStake {
+        StakeInfo memory exitInfo = stakerInfo[msg.sender][index];
+        if (exitInfo.stakeAmount > 0) revert BMS__NoStakeAvailable();
+        if (block.timestamp > exitInfo.duration)
+            revert BMS__StakingPeriodOverTryWithdrawal();
 
-        uint256 userStakeBalance = balanceOf[msg.sender];
-        uint64 recentStakeDurationUpdate = getLatestStakeTimeFromStart();
-        uint256 _totalSupply = totalSupply;
+        uint256 exitAmount = exitInfo.stakeAmount;
+        exitInfo.stakeAmount = 0;
+        // exitInfo.duration = 0;
+        // exitInfo.stakeBegan = 0;
+        exitInfo = StakeInfo(0, 0, 0);
+        if (!tokenAddress.transferFrom(address(this), msg.sender, exitAmount))
+            revert BMS__StakeExitFailed();
+        emit StakerExited(msg.sender, exitAmount, exitInfo);
+    }
 
-        uint256 rewardPerToken = _getRewardPerToken(
-            recentStakeDurationUpdate,
-            _totalSupply
-        );
-        rewardPerTokenStored = rewardPerToken;
+    function withdraw(uint32 index) public hasStake {
+        StakeInfo memory currentStaker = stakerInfo[msg.sender][index];
+        if (
+            (block.timestamp - currentStaker.stakeBegan) <
+            currentStaker.duration
+        ) revert BMS__StakingPeriodNotOver();
 
-        lastUpdateTime = recentStakeDurationUpdate;
-
-        stakeRewards[msg.sender] = _earned(
-            msg.sender,
-            userStakeBalance,
-            rewardPerToken,
-            stakeRewards[msg.sender]
-        );
-
-        userRewardPerTokenPaid[msg.sender] = rewardPerToken;
-
-        balanceOf[msg.sender] = userStakeBalance - amount;
-
-        unchecked {
-            totalSupply = _totalSupply - amount;
-        }
-
-        if (!tokenAddress.transferFrom(address(this), msg.sender, amount))
+        uint256 rewards = _getStakeRewards(index);
+        if (rewards <= 0) revert BMS__NotRewardsAvailable();
+        currentStaker.stakeBegan = uint64(block.timestamp);
+        if (!tokenAddress.transferFrom(msg.sender, address(this), rewards))
             revert BMS__WithdrawFailed();
 
-        emit TokenStakeWithdrawn(msg.sender, amount);
+        emit StakeYieldRedeemed(msg.sender, rewards, index);
     }
 
-    function exit() public hasStake {
-        uint256 stakeBalance = balanceOf[msg.sender];
-
-        uint64 recentStakeDurationUpdate = getLatestStakeTimeFromStart();
-        uint256 _totalSupply = totalSupply;
-        uint256 rewardPerToken = _getRewardPerToken(
-            recentStakeDurationUpdate,
-            _totalSupply
-        );
-
-        uint256 rewards = _earned(
-            msg.sender,
-            stakeBalance,
-            rewardPerToken,
-            stakeRewards[msg.sender]
-        );
-        if (rewards > 0) {
-            stakeRewards[msg.sender] = 0;
-        }
-
-        rewardPerTokenStored = rewardPerToken;
-        lastUpdateTime = recentStakeDurationUpdate;
-        userRewardPerTokenPaid[msg.sender] = rewardPerToken;
-
-        balanceOf[msg.sender] = 0;
-
-        tokenAddress.transferFrom(address(this), msg.sender, stakeBalance);
-        emit TokenStakeWithdrawn(msg.sender, stakeBalance);
-
-        unchecked {
-            totalSupply = _totalSupply - stakeBalance;
-        }
-        if (rewards > 0) {
-            tokenAddress.transferFrom(address(this), msg.sender, rewards);
-            emit StakeYieldRedeemed(msg.sender, rewards);
-        }
+    function pauseStaking() internal onlyRole(STAKER_ADMIN) returns (bool) {
+        if (!isActive) revert BMS__AlreadyPaused();
+        isActive = false;
+        return isActive;
     }
 
-    function getReward() external hasStake {
-        uint256 stakeBalance = balanceOf[msg.sender];
-        uint256 _totalSupply = totalSupply;
-        uint64 latestStakeDurationUpdate = getLatestStakeTimeFromStart();
-        uint256 rewardPerToken = _getRewardPerToken(
-            latestStakeDurationUpdate,
-            _totalSupply
-        );
-        rewardPerTokenStored = rewardPerToken;
-        lastUpdateTime = latestStakeDurationUpdate;
-        uint256 rewards = _earned(
-            msg.sender,
-            stakeBalance,
-            rewardPerToken,
-            stakeRewards[msg.sender]
-        );
-        if (rewards <= 0) {
-            revert BMS__NotRewardsAvailable();
-        } else if (rewards > 0) {
-            stakeRewards[msg.sender] = 0;
+    function restartStaking() internal onlyRole(STAKER_ADMIN) returns (bool) {
+        if (isActive) revert BMS__StakingAlreadyActive();
+        isActive = false;
+        return isActive;
+    }
+
+    function grantStakeAdminRole(
+        address admin
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _grantRole(STAKER_ADMIN, admin);
+    }
+
+    function revokeStakeAdminRole(
+        address _admin
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _grantRole(STAKER_ADMIN, _admin);
+    }
+
+    function _getStakeRewards(uint32 index) internal view returns (uint256) {
+        StakeInfo memory thisStake = stakerInfo[msg.sender][index];
+        if (block.timestamp < thisStake.stakeBegan + thisStake.duration) {
+            return 0;
         }
-
-        tokenAddress.transferFrom(address(this), msg.sender, rewards);
-    }
-
-    function getRewardPerToken() public view returns (uint256) {
-        return _getRewardPerToken(getLatestStakeTimeFromStart(), totalSupply);
-    }
-
-    function earned(address staker) public view returns (uint256) {
-        return
-            _earned(
-                staker,
-                balanceOf[staker],
-                _getRewardPerToken(getLatestStakeTimeFromStart(), totalSupply),
-                stakeRewards[staker]
+        uint64 stakingDuration = uint64(block.timestamp) - thisStake.stakeBegan;
+        if (stakingDuration > 0 && rewardRate > 0) {
+            int128 compoundingFactor = ABDKMath64x64.pow(
+                ABDKMath64x64.add(
+                    ABDKMath64x64.fromUInt(1),
+                    ABDKMath64x64.div(
+                        ABDKMath64x64.fromUInt(rewardRate),
+                        ABDKMath64x64.fromUInt(365)
+                    )
+                ),
+                stakingDuration / 1 days
             );
-    }
-
-    function _getRewardPerToken(
-        uint64 latestStakeTimeFromStart,
-        uint256 _totalSupply
-    ) internal view returns (uint256) {
-        if (_totalSupply == 0) {
-            return rewardPerTokenStored;
+            return
+                ABDKMath64x64.mulu(compoundingFactor, thisStake.stakeAmount) -
+                thisStake.stakeAmount;
         }
-        return
-            rewardPerTokenStored +
-            FullMath.mulDiv(rewardRate, latestStakeTimeFromStart, _totalSupply);
-    }
-
-    function _earned(
-        address account,
-        uint256 userStakeAmount,
-        uint256 rewardPerToken,
-        uint256 prevRewards
-    ) internal view returns (uint256) {
-        return
-            FullMath.mulDiv(
-                userStakeAmount,
-                rewardPerToken - userRewardPerTokenPaid[account],
-                PRECISION
-            ) + prevRewards;
-    }
-
-    function getLatestStakeTimeFromStart() private view returns (uint64) {
-        if (block.timestamp < MIN_DURATION) {
-            return MIN_DURATION;
-        } else if (block.timestamp < MAX_DURATION) {
-            return MAX_DURATION;
-        } else {
-            return uint64(block.timestamp);
-        }
+        return 0;
     }
 }
