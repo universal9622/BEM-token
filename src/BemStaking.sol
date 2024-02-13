@@ -81,7 +81,6 @@ contract BemStaking is AccessControl {
         );
         stakerInfo[msg.sender][stakeCount] = stakeInfo;
         stakeCount++;
-        tokenAddress.approve(address(this), _amount);
         if (!tokenAddress.transferFrom(msg.sender, address(this), _amount))
             revert BMS__StakeFailed();
         totalSupply += _amount;

@@ -30,10 +30,26 @@ contract BemStakingTest is Test {
     }
 
     function testStakeFunction() public {
+        vm.startPrank(address(user1));
+        IERC20(bem).approve(address(bemStaking), 10000000000000000000000);
+        vm.stopPrank();
         vm.startPrank(user1);
         bemStaking.stake(10000000000000000000000, MIN_DURATION);
         uint256 initialStake = 10000000000000000000000;
         assertEqUint(bemStaking.totalSupply(), initialStake);
         vm.stopPrank();
+        vm.startPrank(address(user2));
+        IERC20(bem).approve(address(bemStaking), 10000000000000000000000);
+        vm.stopPrank();
+        vm.startPrank(user2);
+        bemStaking.stake(10000000000000000000000, MIN_DURATION);
+        vm.stopPrank();
+    }
+
+    function testStakeWithdrawal() public {
+        testStakeFunction();
+        vm.warp(block.timestamp + 120 days);
+        vm.startPrank(user1);
+        // bemStaking.withdraw();
     }
 }
