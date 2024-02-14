@@ -11,7 +11,11 @@ contract DeployBemStaking is Script {
     function run() external returns (BemStaking) {
         vm.startBroadcast();
         BemToken bemToken = new BemToken();
-        BemStaking bemStaking = new BemStaking(IERC20(bemToken), msg.sender);
+        BemStaking bemStaking = new BemStaking(
+            IERC20(bemToken),
+            msg.sender,
+            10
+        );
         vm.stopBroadcast();
         return bemStaking;
     }

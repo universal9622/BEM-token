@@ -4,6 +4,7 @@ pragma solidity ^0.8.19;
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "./lib/ABDKMath64x64.sol";
+import "forge-std/console.sol";
 
 //Error
 error BMS__InsufficientStake();
@@ -11,7 +12,7 @@ error BMS__InvalidDuration();
 error BMS_InsufficientBalance();
 error BMS__StakeFailed();
 error BMS__WithdrawFailed();
-error BMS__NotRewardsAvailable();
+error BMS__NoRewardsAvailable();
 error BMS__InvalidStaker();
 error BMS__StakingPeriodNotOver();
 error BMS__NoStakeAvailable();
@@ -24,7 +25,7 @@ error BMS__StakeExitFailed();
 contract BemStaking is AccessControl {
     IERC20 public immutable tokenAddress;
     uint256 public totalSupply;
-    uint256 public immutable rewardRate;
+    uint256 public immutable i_rewardRate;
     bool public isActive = true;
 
     uint64 public MIN_DURATION = 3 * 30 days;
@@ -33,10 +34,11 @@ contract BemStaking is AccessControl {
     struct StakeInfo {
         uint256 stakeAmount;
         uint64 duration;
-        uint64 stakeBegan;
+        uint256 stakeBegan;
     }
 
     //Mapping
+    mapping(address => uint32) public stakeCounts;
     mapping(address => mapping(uint32 => StakeInfo)) public stakerInfo;
     mapping(address => bool) public isStaker;
 
@@ -44,8 +46,10 @@ contract BemStaking is AccessControl {
     event TokenStaked(
         address staker,
         uint256 amount,
+        uint64 stakeBegan,
         uint64 duration,
-        uint32 _counter
+        uint32 _counter,
+        StakeInfo stakeInfo
     );
     event StakeYieldRedeemed(address staker, uint256 rewards, uint32 index);
     event StakerExited(address staker, uint _amount, StakeInfo stakeInfo);
@@ -60,8 +64,9 @@ contract BemStaking is AccessControl {
         _;
     }
 
-    constructor(IERC20 _token, address stakerAdmin) {
+    constructor(IERC20 _token, address stakerAdmin, uint256 rewardRate) {
         tokenAddress = _token;
+        i_rewardRate = rewardRate;
         _grantRole(STAKER_ADMIN, stakerAdmin);
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
     }
@@ -73,23 +78,33 @@ contract BemStaking is AccessControl {
         if (tokenAddress.balanceOf(msg.sender) < _amount)
             revert BMS_InsufficientBalance();
 
-        uint32 stakeCount;
+        uint32 stakeCount = stakeCounts[msg.sender];
         StakeInfo memory stakeInfo = StakeInfo(
             _amount,
             _duration,
-            uint64(block.timestamp)
+            block.timestamp
         );
+        console.log("stakeBegan:", stakeInfo.stakeBegan);
         stakerInfo[msg.sender][stakeCount] = stakeInfo;
+        stakeCounts[msg.sender] = stakeCount + 1;
         stakeCount++;
         if (!tokenAddress.transferFrom(msg.sender, address(this), _amount))
             revert BMS__StakeFailed();
         totalSupply += _amount;
         isStaker[msg.sender] = true;
 
-        emit TokenStaked(msg.sender, _amount, _duration, stakeCount);
+        emit TokenStaked(
+            msg.sender,
+            _amount,
+            uint64(block.timestamp),
+            _duration,
+            stakeCount,
+            stakeInfo
+        );
     }
 
-    function exit(uint32 index) external hasStake {
+    function exit() external hasStake {
+        uint32 index = stakeCounts[msg.sender];
         StakeInfo memory exitInfo = stakerInfo[msg.sender][index];
         if (exitInfo.stakeAmount > 0) revert BMS__NoStakeAvailable();
         if (block.timestamp > exitInfo.duration)
@@ -105,15 +120,14 @@ contract BemStaking is AccessControl {
         emit StakerExited(msg.sender, exitAmount, exitInfo);
     }
 
-    function withdraw(uint32 index) public hasStake {
+    function withdraw() public hasStake {
+        uint32 index = stakeCounts[msg.sender];
         StakeInfo memory currentStaker = stakerInfo[msg.sender][index];
-        if (
-            (block.timestamp - currentStaker.stakeBegan) <
-            currentStaker.duration
-        ) revert BMS__StakingPeriodNotOver();
+        if (block.timestamp - currentStaker.stakeBegan < currentStaker.duration)
+            revert BMS__StakingPeriodNotOver();
 
-        uint256 rewards = _getStakeRewards(index);
-        if (rewards <= 0) revert BMS__NotRewardsAvailable();
+        uint256 rewards = _getStakeRewards();
+        if (rewards <= 0) revert BMS__NoRewardsAvailable();
         currentStaker.stakeBegan = uint64(block.timestamp);
         if (!tokenAddress.transferFrom(msg.sender, address(this), rewards))
             revert BMS__WithdrawFailed();
@@ -121,13 +135,13 @@ contract BemStaking is AccessControl {
         emit StakeYieldRedeemed(msg.sender, rewards, index);
     }
 
-    function pauseStaking() internal onlyRole(STAKER_ADMIN) returns (bool) {
+    function pauseStaking() public onlyRole(STAKER_ADMIN) returns (bool) {
         if (!isActive) revert BMS__AlreadyPaused();
         isActive = false;
         return isActive;
     }
 
-    function restartStaking() internal onlyRole(STAKER_ADMIN) returns (bool) {
+    function restartStaking() public onlyRole(STAKER_ADMIN) returns (bool) {
         if (isActive) revert BMS__StakingAlreadyActive();
         isActive = false;
         return isActive;
@@ -145,18 +159,20 @@ contract BemStaking is AccessControl {
         _grantRole(STAKER_ADMIN, _admin);
     }
 
-    function _getStakeRewards(uint32 index) internal view returns (uint256) {
+    function _getStakeRewards() internal view returns (uint256) {
+        uint32 index = stakeCounts[msg.sender];
         StakeInfo memory thisStake = stakerInfo[msg.sender][index];
-        if (block.timestamp < thisStake.stakeBegan + thisStake.duration) {
+        if (block.timestamp < (thisStake.stakeBegan + thisStake.duration)) {
             return 0;
         }
-        uint64 stakingDuration = uint64(block.timestamp) - thisStake.stakeBegan;
-        if (stakingDuration > 0 && rewardRate > 0) {
+        uint256 stakingDuration = uint64(block.timestamp) -
+            thisStake.stakeBegan;
+        if (stakingDuration > 0 && i_rewardRate > 0) {
             int128 compoundingFactor = ABDKMath64x64.pow(
                 ABDKMath64x64.add(
                     ABDKMath64x64.fromUInt(1),
                     ABDKMath64x64.div(
-                        ABDKMath64x64.fromUInt(rewardRate),
+                        ABDKMath64x64.fromUInt(i_rewardRate),
                         ABDKMath64x64.fromUInt(365)
                     )
                 ),
