@@ -213,3 +213,12 @@ contract BemPresale is Ownable {
         emit AirDrop(address(this), user, _tokenAmount);
     }
 }
+/**
+ * constructor(
+        uint256 
+        uint256 
+        uint256 
+        IERC20  
+        bytes32 
+    )
+ */
