@@ -25,7 +25,7 @@ pragma solidity ^0.8.19;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "foundry-chainlink-toolkit/src/interfaces/feeds/AggregatorV3Interface.sol";
+import "@chainlink/src/interfaces/feeds/AggregatorV3Interface.sol";
 import "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
 import "./lib/ABDKMath64x64.sol";
 

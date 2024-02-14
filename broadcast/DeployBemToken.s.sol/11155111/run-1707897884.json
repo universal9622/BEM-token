@@ -20,49 +20,18 @@
       "isFixedGasLimit": false
     }
   ],
-  "receipts": [
-    {
-      "transactionHash": "0x347979d06759bb0f038cfe64e8865fbdba6203f952b235b5aabfee31ffcefed5",
-      "transactionIndex": "0x32",
-      "blockHash": "0xa22bff6678e3ddd004c1c376a5d5be92786509de8cd487708a54c288b7e3f21f",
-      "blockNumber": "0x50a6e0",
-      "from": "0xE6F3889C8EbB361Fa914Ee78fa4e55b1BBed3A96",
-      "to": null,
-      "cumulativeGasUsed": "0x5ac756",
-      "gasUsed": "0xadf36",
-      "contractAddress": "0x54CDf5787f7b5B585687Fe83cD1A460fe5b94c7f",
-      "logs": [
-        {
-          "address": "0x54CDf5787f7b5B585687Fe83cD1A460fe5b94c7f",
-          "topics": [
-            "0x8be0079c531659141344cd1fd0a4f28419497f9722a3daafe3b4186f6b6457e0",
-            "0x0000000000000000000000000000000000000000000000000000000000000000",
-            "0x000000000000000000000000e6f3889c8ebb361fa914ee78fa4e55b1bbed3a96"
-          ],
-          "data": "0x",
-          "blockHash": "0xa22bff6678e3ddd004c1c376a5d5be92786509de8cd487708a54c288b7e3f21f",
-          "blockNumber": "0x50a6e0",
-          "transactionHash": "0x347979d06759bb0f038cfe64e8865fbdba6203f952b235b5aabfee31ffcefed5",
-          "transactionIndex": "0x32",
-          "logIndex": "0x4c",
-          "removed": false
-        }
-      ],
-      "status": "0x1",
-      "logsBloom": "0x00000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000020000000000000000000800000000020000000000000000000000400000000000000000000000000400004000000000000000000000000000000000000000000000000000000000000000000000000000000400000000000000000001000000000000000000000000000080000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000000",
-      "type": "0x2",
-      "effectiveGasPrice": "0xcc9ca6f2"
-    }
-  ],
+  "receipts": [],
   "libraries": [],
-  "pending": [],
+  "pending": [
+    "0x347979d06759bb0f038cfe64e8865fbdba6203f952b235b5aabfee31ffcefed5"
+  ],
   "returns": {
     "0": {
       "internal_type": "contract BemToken",
       "value": "0x54CDf5787f7b5B585687Fe83cD1A460fe5b94c7f"
     }
   },
-  "timestamp": 1707897891,
+  "timestamp": 1707897884,
   "chain": 11155111,
   "multi": false,
   "commit": "9750505"

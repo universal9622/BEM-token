@@ -5,7 +5,7 @@ import "forge-std/Test.sol";
 import "../src/BemPresale.sol"; // Adjust the path according to your project structure
 import "../src/Bem.sol";
 import "forge-std/console.sol";
-import "foundry-chainlink-toolkit/src/interfaces/feeds/AggregatorV3Interface.sol";
+import "@chainlink/src/interfaces/feeds/AggregatorV3Interface.sol";
 import "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
 
 contract BemPresaleTest is Test {
