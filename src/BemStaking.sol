@@ -36,7 +36,7 @@ contract BemStaking is AccessControl {
     uint64 public MIN_DURATION = 3 * 30 days; // Minimum staking duration.
     uint64 public MAX_DURATION = 2 * 365 days; // Maximum staking duration.
     bytes32 public constant STAKER_ADMIN = keccak256("STAKER_ADMIN"); // Role for staking admin.
-   // Struct to store information about each stake.
+    // Struct to store information about each stake.
     struct StakeInfo {
         uint256 stakeAmount; // Amount of tokens staked.
         uint64 duration; // Duration of the stake.
@@ -68,7 +68,8 @@ contract BemStaking is AccessControl {
         if (!isActive) revert BMS__StakingInactive();
         _;
     }
-       /**
+
+    /**
      * @notice Constructor to initialize the staking contract with the token to be staked and the admin role.
      * @param _token Address of the ERC20 token to be staked.
      * @param stakerAdmin Address to be granted the STAKER_ADMIN role.
@@ -80,7 +81,8 @@ contract BemStaking is AccessControl {
         _grantRole(STAKER_ADMIN, stakerAdmin);
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
     }
-        /**
+
+    /**
      * @notice Allows users to stake tokens for a specified duration.
      * @param _amount Amount of tokens to stake.
      * @param _duration Duration for which the tokens are to be staked.
@@ -117,17 +119,18 @@ contract BemStaking is AccessControl {
             stakeInfo
         );
     }
-        /**
+
+    /**
      * @notice Allows a staker to exit staking by withdrawing their staked tokens.
      * @dev Emits a StakerExited event on successful withdrawal of staked tokens.
      * This function checks that the caller has an active stake, verifies if the staking period
      * has ended, and then transfers the staked amount back to the caller. The staked amount is
      * then reset to 0 to prevent re-entrancy or duplicate withdrawals.
-     * 
+     *
      * Requirements:
      * - The caller must have an active stake.
      * - The staking period for the latest stake must be over.
-     * 
+     *
      * @custom:modifier hasStake Ensures the caller has an active stake.
      */
     function exit() external hasStake {
@@ -147,7 +150,7 @@ contract BemStaking is AccessControl {
         emit StakerExited(msg.sender, exitAmount, exitInfo);
     }
 
-        /**
+    /**
      * @notice Allows a staker to withdraw their rewards after the staking period is over.
      * @dev Emits a StakeYieldRedeemed event on successful withdrawal of rewards.
      * This function checks if the staking period for the caller's latest stake has ended,
@@ -168,7 +171,8 @@ contract BemStaking is AccessControl {
 
         emit StakeYieldRedeemed(msg.sender, rewards, index);
     }
-      /**
+
+    /**
      * @notice Pauses the staking functionality, preventing new stakes.
      * @dev Can only be called by an account with the STAKER_ADMIN role.
      * @return bool Returns true if staking is successfully paused.
@@ -178,7 +182,8 @@ contract BemStaking is AccessControl {
         isActive = false;
         return isActive;
     }
-        /**
+
+    /**
      * @notice Restarts the staking functionality, allowing new stakes.
      * @dev Can only be called by an account with the STAKER_ADMIN role.
      * @return bool Returns true if staking is successfully restarted.
@@ -188,7 +193,8 @@ contract BemStaking is AccessControl {
         isActive = false;
         return isActive;
     }
-        /**
+
+    /**
      * @notice Grants the STAKER_ADMIN role to a specified account.
      * @param admin The address to be granted the STAKER_ADMIN role.
      * @dev Can only be called by an account with the DEFAULT_ADMIN_ROLE.
@@ -198,9 +204,10 @@ contract BemStaking is AccessControl {
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
         _grantRole(STAKER_ADMIN, admin);
     }
-        /**
+
+    /**
      * @notice Revokes the STAKER_ADMIN role from a specified account.
-     * @param admin The address from which the STAKER_ADMIN role will be revoked.
+     * @param _admin The address from which the STAKER_ADMIN role will be revoked.
      * @dev Can only be called by an account with the DEFAULT_ADMIN_ROLE.
      */
     function revokeStakeAdminRole(
@@ -208,7 +215,8 @@ contract BemStaking is AccessControl {
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
         _grantRole(STAKER_ADMIN, _admin);
     }
-     /**
+
+    /**
      * @notice Calculates and returns the staking rewards for a staker.
      * @return uint256 The calculated staking rewards.
      * @dev Uses ABDKMath64x64 library for precise calculation of compounding rewards.
